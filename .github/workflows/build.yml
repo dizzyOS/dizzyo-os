@@ -10,27 +10,49 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
+      options: --user root
     
     steps:
-    - name: Install git
-      run: pacman -Syu --noconfirm && pacman -S --noconfirm git
-      
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install dependencies
+    - name: Setup environment
       run: |
-        pacman -S --noconfirm archiso squashfs-tools
-    
-    - name: Make scripts executable
-      run: chmod +x build-simple.sh create-iso.sh
-    
+        echo "Setting up Arch Linux environment..."
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm archiso squashfs-tools git
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Verify files
+      run: |
+        echo "Files in repository:"
+        ls -la
+        echo ""
+        echo "Archiso directory:"
+        ls -la archiso/
+        echo ""
+        echo "Checking archiso config:"
+        cat archiso/profiledef.sh
+        cat archiso/pacman.conf
+
     - name: Build ISO
-      run: ./build-simple.sh
-    
+      run: |
+        echo "Starting ISO build..."
+        chmod +x *.sh
+        mkarchiso -v -w work -o output archiso
+        echo "Build complete!"
+        ls -la output/
+
     - name: Upload ISO
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: dizzyo-os-iso
         path: output/*.iso
         retention-days: 30
+
+    - name: Build failed - show logs
+      if: failure()
+      run: |
+        echo "Build failed! Checking logs..."
+        ls -la work/ 2>/dev/null || true
+        cat work/build.log 2>/dev/null || true
