@@ -8,51 +8,216 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --user root
     
     steps:
-    - name: Setup environment
-      run: |
-        echo "Setting up Arch Linux environment..."
-        pacman -Syu --noconfirm
-        pacman -S --noconfirm archiso squashfs-tools git
-
-    - name: Checkout repository
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Verify files
+    - name: Install dependencies
       run: |
-        echo "Files in repository:"
-        ls -la
-        echo ""
-        echo "Archiso directory:"
-        ls -la archiso/
-        echo ""
-        echo "Checking archiso config:"
-        cat archiso/profiledef.sh
-        cat archiso/pacman.conf
+        sudo apt-get update
+        sudo apt-get install -y \
+          squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin \
+          mtools dosfstools genisoimage cpio linux-image-generic
 
-    - name: Build ISO
+    - name: Build DizzyoOS
       run: |
-        echo "Starting ISO build..."
-        chmod +x *.sh
-        mkarchiso -v -w work -o output archiso
-        echo "Build complete!"
-        ls -la output/
+        set -e
+        
+        ROOTFS=rootfs
+        INITRD=initrd_dir
+        OUTPUT=output
+        KERNEL=$(ls /boot/vmlinuz-* | head -1)
+        
+        echo "Using kernel: $KERNEL"
+        
+        # ===== 1. Create rootfs =====
+        echo "=== Creating rootfs ==="
+        sudo mkdir -p ${ROOTFS}/{bin,sbin,lib,lib64,etc,var,proc,sys,dev,tmp,run,root,boot,opt,mnt,srv,home}
+        sudo mkdir -p ${ROOTFS}/usr/{bin,sbin,lib,lib64,share}
+        sudo mkdir -p ${ROOTFS}/dev/{pts,shm}
+        sudo mkdir -p ${ROOTFS}/etc/pam.d
+        
+        # DizzyoOS branding
+        sudo tee ${ROOTFS}/etc/os-release > /dev/null << 'EOF'
+NAME="DizzyoOS"
+VERSION="1.0.0"
+ID=dizzyo
+ID_LIKE=arch
+PRETTY_NAME="DizzyoOS 1.0.0 (Genesis)"
+HOME_URL="https://dizzyo-os.org"
+BUG_REPORT_URL="https://github.com/dizzyOS/dizzyo-os/issues"
+EOF
+        
+        echo "dizzyo-live" | sudo tee ${ROOTFS}/etc/hostname > /dev/null
+        sudo tee ${ROOTFS}/etc/hosts > /dev/null << 'EOF'
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   dizzyo-live.localdomain   dizzyo-live
+EOF
+        
+        echo "dizzyo-live" | sudo tee ${ROOTFS}/etc/issue > /dev/null
+        sudo chmod 1777 ${ROOTFS}/tmp
+        
+        # ===== 2. Create initramfs =====
+        echo "=== Creating initramfs ==="
+        sudo rm -rf ${INITRD}
+        sudo mkdir -p ${INITRD}/{bin,sbin,etc,proc,sys,dev,tmp,run,usr/bin,usr/sbin}
+        
+        # Copy busybox if available
+        if command -v busybox &>/dev/null; then
+          sudo cp $(which busybox) ${INITRD}/bin/
+          for cmd in sh mount umount echo ls cat mkdir sleep poweroff reboot switch_root modprobe; do
+            sudo ln -sf busybox ${INITRD}/bin/${cmd} 2>/dev/null || true
+          done
+        else
+          # Minimal init without busybox - use Ubuntu's sh
+          sudo cp /bin/sh ${INITRD}/bin/
+          sudo cp /bin/echo ${INITRD}/bin/ 2>/dev/null || true
+          sudo cp /bin/ls ${INITRD}/bin/ 2>/dev/null || true
+          sudo cp /bin/cat ${INITRD}/bin/ 2>/dev/null || true
+          sudo cp /bin/mkdir ${INITRD}/bin/ 2>/dev/null || true
+          sudo cp /sbin/mount ${INITRD}/sbin/ 2>/dev/null || true
+          sudo cp /sbin/umount ${INITRD}/sbin/ 2>/dev/null || true
+          sudo cp /sbin/switch_root ${INITRD}/sbin/ 2>/dev/null || true
+          # Copy required libs
+          ldd /bin/sh 2>/dev/null | awk '{print $3}' | grep -v "not found" | while read lib; do
+            sudo cp "$lib" ${INITRD}/lib64/ 2>/dev/null || sudo cp "$lib" ${INITRD}/lib/ 2>/dev/null || true
+          done
+          sudo cp /lib64/ld-linux-x86-64.so.2 ${INITRD}/lib64/ 2>/dev/null || true
+        fi
+        
+        # Create init
+        sudo tee ${INITRD}/init > /dev/null << 'INITEOF'
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+echo ""
+echo "=========================================="
+echo "    DizzyoOS 1.0.0 (Genesis)"
+echo "=========================================="
+echo ""
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mount -t tmpfs tmpfs /run 2>/dev/null
+mount -t tmpfs tmpfs /tmp 2>/dev/null
+
+echo "Kernel: $(uname -r)"
+echo ""
+echo "Searching for DizzyoOS..."
+echo ""
+
+FOUND=0
+for dev in /dev/sr0 /dev/cdrom; do
+  if [ -b "$dev" ]; then
+    mkdir -p /mnt/live
+    mount -t iso9660 -o ro "$dev" /mnt/live 2>/dev/null && {
+      echo "Found live media on $dev"
+      if [ -f /mnt/live/arch/x86_64/rootfs.squashfs ]; then
+        echo "Mounting DizzyoOS rootfs..."
+        mkdir -p /mnt/newroot
+        mount -t squashfs -o ro,loop /mnt/live/arch/x86_64/rootfs.squashfs /mnt/newroot
+        FOUND=1
+        break
+      fi
+    }
+  fi
+done
+
+if [ "$FOUND" = "1" ]; then
+  echo "DizzyoOS found! Booting..."
+  for d in dev proc sys run tmp; do
+    mount --move /mnt/newroot/$d /$d 2>/dev/null
+  done
+  exec switch_root /mnt/newroot /sbin/init 2>/dev/null
+fi
+
+echo "No DizzyoOS media found."
+echo "Dropping to shell..."
+echo ""
+exec /bin/sh
+INITEOF
+        sudo chmod +x ${INITRD}/init
+        
+        # Pack initramfs as cpio
+        cd ${INITRD}
+        sudo find . -print0 | sudo cpio --null -o --format=newc 2>/dev/null | gzip -9 > ../initrd.img
+        cd ..
+        ls -lh initrd.img
+        
+        # ===== 3. Create squashfs =====
+        echo "=== Creating squashfs ==="
+        sudo mksquashfs ${ROOTFS} rootfs.squashfs -comp zstd -Xcompression-level 19 -noappend
+        ls -lh rootfs.squashfs
+        
+        # ===== 4. Build ISO =====
+        echo "=== Building ISO ==="
+        sudo mkdir -p ${OUTPUT}
+        mkdir -p iso_root/{arch/{boot/x86_64,x86_64},boot/grub,EFI/BOOT}
+        
+        sudo cp rootfs.squashfs iso_root/arch/x86_64/rootfs.squashfs
+        sudo cp ${KERNEL} iso_root/arch/boot/x86_64/vmlinuz-linux
+        sudo cp initrd.img iso_root/arch/boot/x86_64/initramfs-linux
+        
+        # GRUB config
+        cat > iso_root/boot/grub/grub.cfg << 'GRUBCFG'
+set default=0
+set timeout=5
+set gfxmode=auto
+
+menuentry "DizzyoOS 1.0.0 (Genesis)" {
+    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS
+    initrd /arch/boot/x86_64/initramfs-linux
+}
+
+menuentry "DizzyoOS 1.0.0 - Fallback (nomodeset)" {
+    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS nomodeset
+    initrd /arch/boot/x86_64/initramfs-linux
+}
+GRUBCFG
+        
+        # GRUB EFI
+        grub-mkstandalone \
+          --format=x86_64-efi \
+          --output=iso_root/EFI/BOOT/BOOTX64.EFI \
+          --modules="linux normal iso9660 part_gpt" \
+          --locales="" --fonts="" \
+          "boot/grub/grub.cfg=iso_root/boot/grub/grub.cfg"
+        
+        # GRUB BIOS
+        grub-mkstandalone \
+          --format=i386-pc \
+          --output=iso_root/boot/grub/bios.img \
+          --modules="linux normal iso9660 biosdisk search" \
+          --locales="" --fonts="" \
+          "boot/grub/grub.cfg=iso_root/boot/grub/grub.cfg"
+        
+        # Combine BIOS boot images
+        cat /usr/lib/grub/i386-pc/cdboot.img iso_root/boot/grub/bios.img > iso_root/boot/grub/bios-combined.img
+        
+        # Create ISO
+        sudo xorriso -as mkisofs \
+          -iso-level 3 \
+          -full-iso9660-filenames \
+          -volid "DIZZYO_OS" \
+          -output ${OUTPUT}/dizzyo-os-1.0.0-x86_64.iso \
+          -eltorito-boot boot/grub/bios-combined.img \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+          -eltorito-alt-boot \
+            -e EFI/BOOT/BOOTX64.EFI \
+            -no-emul-boot -isohybrid-gpt-basdat \
+          iso_root/
+        
+        echo ""
+        echo "=== BUILD COMPLETE ==="
+        ls -lh ${OUTPUT}/
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
-      if: success()
+      if: always()
       with:
         name: dizzyo-os-iso
         path: output/*.iso
         retention-days: 30
-
-    - name: Build failed - show logs
-      if: failure()
-      run: |
-        echo "Build failed! Checking logs..."
-        ls -la work/ 2>/dev/null || true
-        cat work/build.log 2>/dev/null || true
