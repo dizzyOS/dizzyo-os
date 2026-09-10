@@ -8,78 +8,148 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --user root
 
     steps:
+    - name: Setup Arch environment
+      run: |
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm archiso base-devel
+
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        path: dizzyo-os
 
-    - name: Install tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools dosfstools cpio genisoimage isolinux syslinux-common linux-image-generic
-
-    - name: Build ISO
+    - name: Build full rootfs with pacstrap
       run: |
         set -e
-        cd "$GITHUB_WORKSPACE"
-        echo "Working dir: $(pwd)"
-
         ROOTFS=/tmp/rootfs
-        OUTPUT=$GITHUB_WORKSPACE/output
-        KERNEL=$(ls /boot/vmlinuz-* | head -1)
-        INITRD_SRC=$(ls /boot/initrd.img-* | head -1)
+        mkdir -p $ROOTFS
 
-        echo "Using kernel: $KERNEL"
-        echo "Using initrd: $INITRD_SRC"
+        pacstrap -K $ROOTFS base linux linux-firmware \
+          plasma-desktop sddm konsole dolphin \
+          networkmanager wireless-tools wpa_supplicant \
+          calamares \
+          grub grub-efi-x64-bin efibootmgr dosfstools mtools \
+          xorg-xwayland xorg-server \
+          firefox \
+          sudo bash-completion \
+          base-devel \
+          packagekit-qt5
 
-        mkdir -p $OUTPUT
-        rm -rf $ROOTFS
+        echo "Rootfs packages installed"
+        systemctl --root=$ROOTFS enable sddm NetworkManager
+        echo "Services enabled"
 
-        echo "=== Creating rootfs ==="
-        mkdir -p $ROOTFS/{bin,sbin,lib,lib64,etc,var,proc,sys,dev,tmp,run,root,boot,opt,mnt,srv,home}
-        mkdir -p $ROOTFS/usr/{bin,sbin,lib,lib64,share}
-        mkdir -p $ROOTFS/dev/{pts,shm}
-        echo 'NAME="DizzyoOS"' | sudo tee $ROOTFS/etc/os-release
-        echo 'VERSION="1.0.0"' | sudo tee -a $ROOTFS/etc/os-release
-        echo 'ID=dizzyo' | sudo tee -a $ROOTFS/etc/os-release
-        echo 'ID_LIKE=arch' | sudo tee -a $ROOTFS/etc/os-release
-        echo 'PRETTY_NAME="DizzyoOS 1.0.0 (Genesis)"' | sudo tee -a $ROOTFS/etc/os-release
-        echo 'HOME_URL="https://dizzyo-os.org"' | sudo tee -a $ROOTFS/etc/os-release
-        echo "dizzyo-live" | sudo tee $ROOTFS/etc/hostname
-        echo "127.0.0.1 localhost" | sudo tee $ROOTFS/etc/hosts
-        echo "::1 localhost" | sudo tee -a $ROOTFS/etc/hosts
-        echo "127.0.1.1 dizzyo-live dizzyo-live.localdomain" | sudo tee -a $ROOTFS/etc/hosts
-        sudo chmod 1777 $ROOTFS/tmp
-        echo "Rootfs done"
+    - name: Configure rootfs
+      run: |
+        set -e
+        ROOTFS=/tmp/rootfs
+
+        echo "dizzyo-live" > $ROOTFS/etc/hostname
+        printf "127.0.0.1 localhost\n::1 localhost\n127.0.1.1 dizzyo-live dizzyo-live.localdomain\n" > $ROOTFS/etc/hosts
+
+        printf 'NAME="DizzyoOS"\nVERSION="1.0.0"\nID=dizzyo\nID_LIKE=arch\nPRETTY_NAME="DizzyoOS 1.0.0 (Genesis)"\nHOME_URL="https://dizzyo-os.org"\nBUG_REPORT_URL="https://github.com/dizzyOS/dizzyo-os/issues"\n' > $ROOTFS/etc/os-release
+
+        echo "dizzyo ALL=(ALL) NOPASSWD:ALL" > $ROOTFS/etc/sudoers.d/dizzyo
+        chmod 440 $ROOTFS/etc/sudoers.d/dizzyo
+
+        mkdir -p $ROOTFS/etc/systemd/logind.conf.d
+        printf '[Logind]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\n' > $ROOTFS/etc/systemd/logind.conf.d/no-lid.conf
+
+        mkdir -p $ROOTFS/etc/sddm.conf.d
+        printf '[General]\nDisplayServer=wayland\nHaltCommand=/usr/bin/systemctl poweroff\nRebootCommand=/usr/bin/systemctl reboot\n' > $ROOTFS/etc/sddm.conf.d/dizzyo.conf
+
+        mkdir -p $ROOTFS/etc/NetworkManager/conf.d
+        printf '[main]\ndns=default\n' > $ROOTFS/etc/NetworkManager/conf.d/dns.conf
+
+        echo "Rootfs configured"
+
+    - name: Setup Calamares with bootloader selection
+      run: |
+        set -e
+        ROOTFS=/tmp/rootfs
+
+        mkdir -p $ROOTFS/etc/calamares/branding/dizzyo
+
+        printf 'modules: [welcome, locale, keyboard, partition, users, bootloaderchoice, bootloader, mount, unpackfs, contextualprocess, sourcesinit, networkcfg, displaymanager, hwclock, localecfg, users, grubcfg, initramfs, initramfs-config, fstab, bootloader, contextualprocess, shellprocess-finish, umount]\nsequence:\n  - show:\n    - welcome\n    - locale\n    - keyboard\n    - partition\n    - users\n    - bootloaderchoice\n    - bootloader\n  - exec:\n    - mount\n    - unpackfs\n    - sourcesinit\n    - networkcfg\n    - displaymanager\n    - hwclock\n    - localecfg\n    - users\n    - grubcfg\n    - initramfs\n    - initramfs-config\n    - fstab\n    - bootloader\n    - contextualprocess\n    - shellprocess-finish\n    - umount\n  - alldone:\n' > $ROOTFS/etc/calamares/settings.conf
+
+        printf '---\nBootLoader:\n  bootloader: grub\n  kernel: /boot/vmlinuz-linux\n  kernelCommandLine: rw quiet\n  image: /boot/initramfs-linux.img\n  fallbackImage: /boot/initramfs-linux-fallback.img\n  espMountPoint: /boot\n' > $ROOTFS/etc/calamares/modules/bootloader.conf
+
+        printf '---\nshowSupportUrl: true\nshowDonateUrl: false\nshowKnownIssues: false\nshowReleaseNotes: true\n' > $ROOTFS/etc/calamares/modules/welcome.conf
+
+        printf '---\nGeoIP:\n  style: plain\n  url: "https://ip-api.com/json/"\n' > $ROOTFS/etc/calamares/modules/locale.conf
+
+        printf '---\nbackend: NetworkManager\n' > $ROOTFS/etc/calamares/modules/networkconfig.conf
+
+        printf '---\nAlwaysShowTab: true\nPartitionCore:\n  efiSystemPartition: /boot\n  defaultFileSystem: ext4\n  defaultFsType: ext4\n  defaultMountPoint: /\nRequiredPartitionTableType: gpt\n' > $ROOTFS/etc/calamares/modules/partition.conf
+
+        printf '---\nbackend: pacman\nupdateDb: true\npackageSequence:\n  - install:\n    - linux\n    - linux-firmware\n    - plasma-desktop\n    - sddm\n    - networkmanager\n    - firefox\n    - sudo\n    - grub\n    - efibootmgr\n    - dosfstools\n' > $ROOTFS/etc/calamares/modules/packages.conf
+
+        printf '---\nType: meleebootloaderchoice\nName: Bootloader Selection\nComment: Choose your preferred bootloader\nID: bootloaderchoice\nWeight: 60\nEntries:\n  - id: grub\n    label: GRUB\n    description: Traditional BIOS + UEFI bootloader. Most compatible.\n  - id: systemd-boot\n    label: systemd-boot\n    description: Simple UEFI-only bootloader. Recommended for modern systems.\n  - id: none\n    label: Skip Bootloader\n    description: Do not install a bootloader. For dual-boot or advanced setups.\n' > $ROOTFS/etc/calamares/modules/bootloaderchoice.conf
+
+        printf '---\nhideClientSecret: true\n' > $ROOTFS/etc/calamares/modules/oauth2.conf
+
+        printf '---\ndefaultDesktop: plasma\n' > $ROOTFS/etc/calamares/modules/desktopconf.conf
+
+        printf '---\nbackend: systemd\n' > $ROOTFS/etc/calamares/modules/displaymanager.conf
+
+        printf '---\ntimezone: Europe/Warsaw\ntimeZones: [Europe/Warsaw, UTC]\n' > $ROOTFS/etc/calamares/modules/locale.conf
+
+        printf '---\nfstabOptions:\n  efiSystemPartition: /boot\n  rootMountPoint: /\n  defaultFileSystem: ext4\n' > $ROOTFS/etc/calamares/modules/fstab.conf
+
+        printf '---\nshell:\n  - /bin/bash\n' > $ROOTFS/etc/calamares/modules/shellprocess-finish.conf
+
+        mkdir -p $ROOTFS/usr/share/calamares/branding/dizzyo
+        printf 'type: brand\n-name: DizzyoOS\n-version: "1.0.0"\n-shortVersion: "1.0.0"\n-publisher: DizzyoOS\n-productUrl: https://dizzyo-os.org\n-bugReportUrl: https://github.com/dizzyOS/dizzyo-os/issues\n-welcomePageHeader: DizzyoOS 1.0.0 (Genesis)\n-welcomePageSubtitle: Choose your bootloader and install DizzyoOS\n-finalPageMessage: Installation complete! Remove the live media and reboot.\n' > $ROOTFS/usr/share/calamares/branding/dizzyo/branding.desc
+
+        echo "Calamares config done"
+
+    - name: Create initramfs and build ISO
+      run: |
+        set -e
+        ROOTFS=/tmp/rootfs
+
+        echo "=== Creating initramfs ==="
+        arch-chroot $ROOTFS mkinitcpio -P 2>/dev/null || echo "mkinitcpio failed, using default initramfs"
+        echo "Initramfs done"
 
         echo "=== Creating squashfs ==="
-        sudo mksquashfs $ROOTFS /tmp/rootfs.squashfs -comp zstd -Xcompression-level 19 -noappend
-        echo "Squashfs done"
+        mksquashfs $ROOTFS /tmp/rootfs.squashfs -comp zstd -Xcompression-level 19 -noappend
+        echo "Squashfs done: $(ls -lh /tmp/rootfs.squashfs | awk '{print $5}')"
 
         echo "=== Building ISO ==="
         ISO_DIR=/tmp/iso
         rm -rf $ISO_DIR
         mkdir -p $ISO_DIR/{arch/{boot/x86_64,x86_64},boot/grub,EFI/BOOT,isolinux}
 
-        sudo cp /tmp/rootfs.squashfs $ISO_DIR/arch/x86_64/rootfs.squashfs
-        sudo cp $KERNEL $ISO_DIR/arch/boot/x86_64/vmlinuz-linux
-        sudo cp $INITRD_SRC $ISO_DIR/arch/boot/x86_64/initramfs-linux
+        cp /tmp/rootfs.squashfs $ISO_DIR/arch/x86_64/rootfs.squashfs
+
+        cp $ROOTFS/boot/vmlinuz-linux $ISO_DIR/arch/boot/x86_64/vmlinuz-linux
+        cp $ROOTFS/boot/initramfs-linux.img $ISO_DIR/arch/boot/x86_64/initramfs-linux
+
+        echo "Kernel: $(ls -lh $ISO_DIR/arch/boot/x86_64/vmlinuz-linux)"
+        echo "Initrd: $(ls -lh $ISO_DIR/arch/boot/x86_64/initramfs-linux)"
 
         sudo bash -c "printf 'set default=0\nset timeout=5\nset gfxmode=auto\n\nmenuentry \"DizzyoOS 1.0.0 (Genesis)\" {\n    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS\n    initrd /arch/boot/x86_64/initramfs-linux\n}\n\nmenuentry \"DizzyoOS 1.0.0 Fallback\" {\n    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS nomodeset\n    initrd /arch/boot/x86_64/initramfs-linux\n}\n' > $ISO_DIR/boot/grub/grub.cfg"
 
-        echo "=== UEFI Boot (GRUB) ==="
-        sudo grub-mkstandalone --format=x86_64-efi --output=$ISO_DIR/EFI/BOOT/BOOTX64.EFI --modules="linux normal iso9660 part_gpt" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
+        grub-mkstandalone --format=x86_64-efi --output=$ISO_DIR/EFI/BOOT/BOOTX64.EFI --modules="linux normal iso9660 part_gpt" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
 
-        echo "=== BIOS Boot (syslinux) ==="
-        sudo bash -c "printf 'UI vesamenu.c32\nPROMPT 0\nTIMEOUT 50\n\nLABEL dizzyo\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS\n\nLABEL dizzyo-fallback\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS nomodeset\n' > $ISO_DIR/isolinux/isolinux.cfg"
-        sudo cp /usr/lib/ISOLINUX/isolinux.bin $ISO_DIR/isolinux/
-        sudo cp /usr/lib/syslinux/modules/bios/vesamenu.c32 $ISO_DIR/isolinux/ 2>/dev/null || sudo cp /usr/lib/syslinux/modules/bios/ldlinux.c32 $ISO_DIR/isolinux/ 2>/dev/null || true
+        sudo bash -c "printf 'UI vesamenu.c32\nPROMPT 0\nTIMEOUT 50\nDEFAULT dizzyo\n\nLABEL dizzyo\n    MENU LABEL DizzyoOS 1.0.0 (Genesis)\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS\n\nLABEL dizzyo-fallback\n    MENU LABEL DizzyoOS 1.0.0 Fallback (nomodeset)\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS nomodeset\n' > $ISO_DIR/isolinux/isolinux.cfg"
 
-        echo "=== Creating ISO ==="
-        sudo xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DIZZYO_OS" -output $OUTPUT/dizzyo-os-1.0.0-x86_64.iso -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-boot isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -isohybrid-gpt-basdat $ISO_DIR/
+        cp /usr/lib/ISOLINUX/isolinux.bin $ISO_DIR/isolinux/
+        cp /usr/lib/syslinux/modules/bios/vesamenu.c32 $ISO_DIR/isolinux/ 2>/dev/null || true
+        cp /usr/lib/syslinux/modules/bios/ldlinux.c32 $ISO_DIR/isolinux/ 2>/dev/null || true
+
+        xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DIZZYO_OS" -output /tmp/dizzyo-os-1.0.0-x86_64.iso -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-boot isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -isohybrid-gpt-basdat $ISO_DIR/
 
         echo "=== BUILD COMPLETE ==="
-        ls -lh $OUTPUT/
+        mkdir -p $GITHUB_WORKSPACE/output
+        cp /tmp/dizzyo-os-1.0.0-x86_64.iso $GITHUB_WORKSPACE/output/
+        ls -lh $GITHUB_WORKSPACE/output/
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
