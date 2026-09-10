@@ -69,7 +69,7 @@ jobs:
 
         sudo grub-mkstandalone --format=x86_64-efi --output=$ISO_DIR/EFI/BOOT/BOOTX64.EFI --modules="linux normal iso9660 part_gpt" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
 
-        sudo grub-mkstandalone --format=i386-pc --output=$ISO_DIR/boot/grub/bios.img --modules="linux normal iso9660 biosdisk search" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
+        sudo grub-mkimage -O i386-pc -o $ISO_DIR/boot/grub/bios.img -p '(hd0,msdos1)/boot/grub' -c $ISO_DIR/boot/grub/grub.cfg linux iso9660 biosdisk part_msdos normal search
 
         sudo cat /usr/lib/grub/i386-pc/cdboot.img $ISO_DIR/boot/grub/bios.img | sudo tee $ISO_DIR/boot/grub/bios-combined.img > /dev/null
 
