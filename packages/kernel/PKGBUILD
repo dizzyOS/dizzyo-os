@@ -1,0 +1,149 @@
+# Maintainer: DizzyoOS Team <team@dizzyo-os.org>
+
+# DizzyoOS Custom Kernel Package
+# Based on linux-cachyos with additional optimizations
+
+pkgbase=linux-dizzyo
+pkgname=("linux-dizzyo" "linux-dizzyo-headers")
+_kernver="6.11"
+pkgver=6.11.0
+pkgrel=1
+pkgdesc="DizzyoOS Linux Kernel - Optimized for performance and gaming"
+arch=("x86_64" "aarch64")
+url="https://github.com/dizzyo-os/linux"
+license=("GPL-2.0-only")
+makedepends=(
+    "kmod"
+    "bc"
+    "cpio"
+    "tar"
+    "xz"
+    "xmlto"
+    "docbook-xsl"
+    "kabiwaga"
+    "perl"
+    "python"
+    "asciidoc"
+    "mkinitcpio"
+)
+options=("!strip")
+source=(
+    "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${_kernver}.tar.xz"
+    "config"
+    "config.aarch64"
+    "0001-dizzyo-sched-ext.patch"
+    "0002-dizzyo-ntsync.patch"
+    "0003-dizzyo-mglru.patch"
+    "0004-dizzyo-bbr3.patch"
+    "0005-dizzyo-vmalloc.patch"
+    "0006-dizzyo-security.patch"
+    "0007-dizzyo-gaming.patch"
+    "0008-dizzyo-hardware.patch"
+    "preset"
+)
+sha256sums=("SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP" "SKIP")
+
+prepare() {
+    cd "${srcdir}/linux-${_kernver}"
+    
+    echo "Applying DizzyoOS patches..."
+    
+    # Apply patches
+    for patch in "${source[@]}"; do
+        if [[ "${patch}" == *.patch ]]; then
+            echo "Applying ${patch}..."
+            patch -Np1 -i "${srcdir}/${patch}"
+        fi
+    done
+    
+    echo "Configuring kernel..."
+    
+    # Use default configuration
+    cat "${srcdir}/config" > .config
+    
+    # Make sure we have the right kernel version
+    scripts/config --set-str VERSION "${_kernver}"
+    scripts/config --set-str PATCHLEVEL ""
+    scripts/config --set-str SUBLEVEL ""
+    scripts/config --set-str EXTRAVERSION "-dizzyo"
+    
+    # Enable required options
+    scripts/config --enable CONFIG_SCHED_CLASS_EXT
+    scripts/config --enable CONFIG_NTSYNC
+    scripts/config --enable CONFIG_BBR3
+    scripts/config --enable CONFIG_MGLRU
+    scripts/config --enable CONFIG_ZRAM
+    scripts/config --enable CONFIG_ZSWAP
+    scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
+    scripts/config --enable CONFIG_NET_SCH_FQ
+    scripts/config --enable CONFIG_TCP_CONG_BBR3
+    
+    # Gaming optimizations
+    scripts/config --enable CONFIG_HZ_1000
+    scripts/config --set-val CONFIG_HZ 1000
+    scripts/config --enable CONFIG_PREEMPT
+    scripts/config --enable CONFIG_PREEMPT_DYNAMIC
+    
+    # Security hardening
+    scripts/config --enable CONFIG_STACKPROTECTOR_STRONG
+    scripts/config --enable CONFIG_RANDOMIZE_BASE
+    scripts/config --enable CONFIG_MODULE_SIG
+    scripts/config --enable CONFIG_MODULE_SIG_SHA256
+    
+    # Generate .config
+    make olddefconfig
+}
+
+build() {
+    cd "${srcdir}/linux-${_kernver}"
+    
+    echo "Building DizzyoOS kernel..."
+    
+    make -j$(nproc) bzImage modules
+    
+    echo "Kernel built successfully!"
+}
+
+_package() {
+    pkgdesc="DizzyoOS Linux Kernel"
+    depends=("coreutils" "kmod" "mkinitcpio")
+    optdepends=(
+        "firmware: needed for various devices"
+        "linux-firmware: needed for most devices"
+    )
+    backup=("etc/mkinitcpio.d/${pkgbase}.preset")
+    
+    cd "${srcdir}/linux-${_kernver}"
+    
+    # Install kernel
+    make modules_install
+    install -Dm644 arch/x86/boot/bzImage "${pkgdir}/boot/vmlinuz-${pkgbase}"
+    
+    # Generate initramfs
+    install -Dm644 "${srcdir}/preset" "${pkgdir}/etc/mkinitcpio.d/${pkgbase}.preset"
+    
+    # Install headers
+    make INSTALL_MOD_PATH="${pkgdir}/usr" modules_install
+    
+    # Remove build and source links
+    rm -f "${pkgdir}"/lib/modules/${_kernver}${_extraversion}/{build,source}
+}
+
+_package-headers() {
+    pkgdesc="DizzyoOS Linux Kernel Headers"
+    depends=("pahole" "python" "perl")
+    
+    cd "${srcdir}/linux-${_kernver}"
+    
+    make INSTALL_MOD_PATH="${pkgdir}/usr" modules_install
+    
+    # Install headers
+    make INSTALL_HDR_PATH="${pkgdir}/usr" headers_install
+}
+
+pkgname=("${pkgbase}" "${pkgbase}-headers")
+for _p in "${pkgname[@]}"; do
+    eval "function _package_${_p//${pkgbase}/}() {
+        _package${_p//${pkgbase}/}
+    }"
+done

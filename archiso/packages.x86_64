@@ -1,0 +1,212 @@
+# DizzyoOS Base Packages
+
+# Base System
+base
+linux
+linux-headers
+linux-firmware
+firmware
+dkms
+
+# Bootloader
+grub
+efibootmgr
+limine
+systemd-boot-manager
+
+# Filesystem Support
+btrfs-progs
+xfsprogs
+f2fs-tools
+dosfstools
+ntfs-3g
+exfatprogs
+
+# Compression
+zstd
+xz
+lz4
+gzip
+
+# Networking
+networkmanager
+network-manager-applet
+wpa_supplicant
+iwd
+dhclient
+openssh
+nftables
+firewalld
+
+# Audio
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+pavucontrol
+
+# Graphics
+mesa
+vulkan-icd-loader
+vulkan-tools
+lib32-vulkan-icd-loader
+xf86-video-amdgpu
+xf86-video-ati
+xf86-video-nouveau
+nvidia-driver
+nvidia-utils
+lib32-nvidia-utils
+
+# Display Server
+xorg-server
+xorg-xwayland
+xorg-xinit
+xorg-xrandr
+xorg-xinput
+
+# Desktop Environments (Base)
+plasma-desktop
+plasma-workspace
+kde-applications-meta
+sddm
+wayland
+
+# Development Tools
+base-devel
+git
+curl
+wget
+rsync
+cmake
+make
+gcc
+clang
+llvm
+rust
+go
+python
+nodejs
+npm
+
+# System Tools
+vim
+nano
+htop
+btop
+neofetch
+fastfetch
+unzip
+zip
+p7zip
+tar
+rsync
+tree
+lsd
+bat
+fd
+ripgrep
+fzf
+jq
+yq
+
+# Shell
+bash
+zsh
+fish
+starship
+
+# Wayland Tools
+sway
+waybar
+wofi
+mako
+wl-clipboard
+grim
+slurp
+wf-recorder
+wlr-randr
+kanshi
+hyprpaper
+swww
+
+# X11 Tools
+i3
+dwm
+rofi
+dunst
+picom
+nitrogen
+feh
+
+# Gaming
+steam
+lutris
+wine
+wine-gecko
+wine-mono
+proton-ge-custom
+mangohud
+gamemode
+gamescope
+dxvk
+vkd3d-proton
+lib32-dxvk
+lib32-vkd3d-proton
+
+# Flatpak
+flatpak
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-desktop-portal-wlr
+
+# Fonts
+noto-fonts
+noto-fonts-cjk
+noto-fonts-emoji
+ttf-dejavu
+ttf-liberation
+ttf-fira-code
+ttf-jetbrains-mono
+ttf-cascadia-code
+
+# Japanese fonts
+otf-font-awesome
+ttf-firacode
+ttf-hack
+ttf-iosevka
+
+# Applications
+firefox
+thunderbird
+libreoffice-fresh
+gimp
+vlc
+obs-studio
+blender
+inkscape
+audacity
+filezilla
+remmina
+
+# System Monitoring
+lm_sensors
+hardinfo
+gnome-disk-utility
+gparted
+
+# Security
+lynis
+clamav
+rkhunter
+firejail
+apparmor
+
+# DizzyoOS Tools
+dizzyo-welcome
+dizzyo-kernel-manager
+dizzyo-hardware-manager
+dizzyo-backup
+dizzyo-settings
+dizzyo-ai
+dizzyo-tui-manager

@@ -1,0 +1,31 @@
+name: Build DizzyoOS ISO
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo pacman -Syu --noconfirm
+        sudo pacman -S --noconfirm archiso squashfs-tools
+    
+    - name: Build ISO
+      run: |
+        chmod +x create-iso.sh
+        sudo ./create-iso.sh
+    
+    - name: Upload ISO
+      uses: actions/upload-artifact@v4
+      with:
+        name: dizzyo-os-iso
+        path: output/*.iso
+        retention-days: 30

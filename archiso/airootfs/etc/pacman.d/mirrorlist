@@ -1,0 +1,14 @@
+# DizzyoOS Mirrorlist
+
+## United States
+Server = https://mirror.dizzyo-os.org/$repo/$arch
+
+## Europe
+Server = https://mirror-eu.dizzyo-os.org/$repo/$arch
+
+## Asia
+Server = https://mirror-asia.dizzyo-os.org/$repo/$arch
+
+## Arch Linux Mirrors (Fallback)
+Server = https://geo.mirror.pkgbuild.com/$repo/$arch
+Server = https://mirror.rackspace.com/archlinux/$repo/$arch
