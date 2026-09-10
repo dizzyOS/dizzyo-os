@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=DizzyoOS Installer
+Comment=Install DizzyoOS to your hard drive
+Exec=sudo /usr/local/bin/dizzyo-install.sh
+Icon=drive-harddisk
+Terminal=false
+Type=Application
+Categories=System;
