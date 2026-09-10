@@ -8,158 +8,103 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --user root
 
     steps:
-    - name: Setup Arch Linux
-      run: |
-        pacman -Syu --noconfirm
-        pacman -S --noconfirm base-devel git squashfs-tools xorriso grub mtools dosfstools cpio gzip wget busybox
-
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Build rootfs
+    - name: Install tools
       run: |
-        set -e
-        ROOTFS=rootfs
-        rm -rf $ROOTFS
-        mkdir -p $ROOTFS/{bin,sbin,lib,lib64,etc,var,proc,sys,dev,tmp,run,root,boot,opt,mnt,srv,home}
-        mkdir -p $ROOTFS/usr/{bin,sbin,lib,lib64,share}
-        mkdir -p $ROOTFS/dev/{pts,shm}
-        echo 'NAME="DizzyoOS"' > $ROOTFS/etc/os-release
-        echo 'VERSION="1.0.0"' >> $ROOTFS/etc/os-release
-        echo 'ID=dizzyo' >> $ROOTFS/etc/os-release
-        echo 'ID_LIKE=arch' >> $ROOTFS/etc/os-release
-        echo 'PRETTY_NAME="DizzyoOS 1.0.0 (Genesis)"' >> $ROOTFS/etc/os-release
-        echo 'HOME_URL="https://dizzyo-os.org"' >> $ROOTFS/etc/os-release
-        echo 'BUG_REPORT_URL="https://github.com/dizzyOS/dizzyo-os/issues"' >> $ROOTFS/etc/os-release
-        echo "dizzyo-live" > $ROOTFS/etc/hostname
-        echo "127.0.0.1   localhost" > $ROOTFS/etc/hosts
-        echo "::1         localhost" >> $ROOTFS/etc/hosts
-        echo "127.0.1.1   dizzyo-live.localdomain   dizzyo-live" >> $ROOTFS/etc/hosts
-        echo "DizzyoOS 1.0.0 Live" > $ROOTFS/etc/issue
-        chmod 1777 $ROOTFS/tmp
-        echo "Rootfs created"
-        ls -la $ROOTFS/
-
-    - name: Build initramfs
-      run: |
-        set -e
-        INITRD=initrd_dir
-        rm -rf $INITRD
-        mkdir -p $INITRD/{bin,sbin,etc,proc,sys,dev,tmp,run,lib}
-        cp /usr/bin/busybox $INITRD/bin/
-        cd $INITRD/bin
-        for cmd in sh mount umount echo ls cat mkdir sleep poweroff reboot; do
-          ln -sf busybox $cmd
-        done
-        cd /build
-        ln -sf busybox $INITRD/sbin/mount
-        ln -sf busybox $INITRD/sbin/umount
-        ln -sf busybox $INITRD/sbin/switch_root
-        cp /lib/modules/*/kernel/fs/squashfs/squashfs.ko $INITRD/lib/ 2>/dev/null || true
-        cp /lib/modules/*/kernel/fs/isofs/isofs.ko $INITRD/lib/ 2>/dev/null || true
-        cp /lib/modules/*/kernel/drivers/cdrom/cdrom.ko $INITRD/lib/ 2>/dev/null || true
-        printf '#!/bin/sh\n' > $INITRD/init
-        printf 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin\n' >> $INITRD/init
-        printf 'echo ""\n' >> $INITRD/init
-        printf 'echo "==========================================="\n' >> $INITRD/init
-        printf 'echo "    DizzyoOS 1.0.0 (Genesis)"\n' >> $INITRD/init
-        printf 'echo "==========================================="\n' >> $INITRD/init
-        printf 'echo ""\n' >> $INITRD/init
-        printf 'for mod in squashfs isofs cdrom; do insmod /lib/${mod}.ko 2>/dev/null; done\n' >> $INITRD/init
-        printf 'mount -t proc proc /proc\n' >> $INITRD/init
-        printf 'mount -t sysfs sysfs /sys\n' >> $INITRD/init
-        printf 'mount -t devtmpfs devtmpfs /dev\n' >> $INITRD/init
-        printf 'mount -t tmpfs tmpfs /run\n' >> $INITRD/init
-        printf 'mount -t tmpfs tmpfs /tmp\n' >> $INITRD/init
-        printf 'mkdir -p /dev/pts\n' >> $INITRD/init
-        printf 'mount -t devpts devpts /dev/pts\n' >> $INITRD/init
-        printf 'echo "Kernel: $(uname -r)"\n' >> $INITRD/init
-        printf 'echo ""\n' >> $INITRD/init
-        printf 'echo "Searching for DizzyoOS..."\n' >> $INITRD/init
-        printf 'FOUND=0\n' >> $INITRD/init
-        printf 'for dev in /dev/sr0 /dev/sr1 /dev/cdrom; do\n' >> $INITRD/init
-        printf '  if [ -b "$dev" ]; then\n' >> $INITRD/init
-        printf '    mkdir -p /mnt/live\n' >> $INITRD/init
-        printf '    mount -t iso9660 -o ro "$dev" /mnt/live 2>/dev/null && {\n' >> $INITRD/init
-        printf '      echo "Found live media on $dev"\n' >> $INITRD/init
-        printf '      if [ -f /mnt/live/arch/x86_64/rootfs.squashfs ]; then\n' >> $INITRD/init
-        printf '        echo "Mounting DizzyoOS rootfs..."\n' >> $INITRD/init
-        printf '        mkdir -p /mnt/newroot\n' >> $INITRD/init
-        printf '        mount -t squashfs -o ro,loop /mnt/live/arch/x86_64/rootfs.squashfs /mnt/newroot\n' >> $INITRD/init
-        printf '        FOUND=1\n' >> $INITRD/init
-        printf '        break\n' >> $INITRD/init
-        printf '      fi\n' >> $INITRD/init
-        printf '    }\n' >> $INITRD/init
-        printf '  fi\n' >> $INITRD/init
-        printf 'done\n' >> $INITRD/init
-        printf 'if [ "$FOUND" = "1" ]; then\n' >> $INITRD/init
-        printf '  echo "DizzyoOS found! Booting..."\n' >> $INITRD/init
-        printf '  for d in dev proc sys run tmp; do\n' >> $INITRD/init
-        printf '    mount --move /mnt/newroot/$d /$d 2>/dev/null\n' >> $INITRD/init
-        printf '  done\n' >> $INITRD/init
-        printf '  exec switch_root /mnt/newroot /sbin/init 2>/dev/null\n' >> $INITRD/init
-        printf 'fi\n' >> $INITRD/init
-        printf 'echo "No media found. Dropping to shell..."\n' >> $INITRD/init
-        printf 'exec /bin/sh\n' >> $INITRD/init
-        chmod +x $INITRD/init
-        cd $INITRD
-        find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > ../initrd.img
-        cd /build
-        ls -lh initrd.img
-
-    - name: Create squashfs
-      run: |
-        set -e
-        mksquashfs rootfs rootfs.squashfs -comp zstd -Xcompression-level 19 -noappend
-        ls -lh rootfs.squashfs
+        sudo apt-get update
+        sudo apt-get install -y squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools dosfstools cpio genisoimage isolinux syslinux-common linux-image-generic
 
     - name: Build ISO
       run: |
         set -e
-        mkdir -p output
-        rm -rf iso_root
-        mkdir -p iso_root/arch/{boot/x86_64,x86_64}
-        mkdir -p iso_root/boot/grub
-        mkdir -p iso_root/EFI/BOOT
-        cp rootfs.squashfs iso_root/arch/x86_64/rootfs.squashfs
-        cp initrd.img iso_root/arch/boot/x86_64/initramfs-linux
-        wget -q "https://archlinux.org/packages/core/x86_64/linux/download" -O /tmp/linux.pkg.tar.zst
-        tar --zstd -xf /tmp/linux.pkg.tar.zst -C iso_root/boot/ boot/vmlinuz-linux 2>/dev/null || true
-        if [ -f iso_root/boot/boot/vmlinuz-linux ]; then
-          mv iso_root/boot/boot/vmlinuz-linux iso_root/arch/boot/x86_64/vmlinuz-linux
-        fi
-        if [ ! -f iso_root/arch/boot/x86_64/vmlinuz-linux ]; then
-          cp /boot/vmlinuz-linux iso_root/arch/boot/x86_64/vmlinuz-linux 2>/dev/null || cp /boot/vmlinuz-$(uname -r) iso_root/arch/boot/x86_64/vmlinuz-linux
-        fi
-        ls -la iso_root/arch/boot/x86_64/
-        printf 'set default=0\n' > iso_root/boot/grub/grub.cfg
-        printf 'set timeout=5\n' >> iso_root/boot/grub/grub.cfg
-        printf 'set gfxmode=auto\n' >> iso_root/boot/grub/grub.cfg
-        printf '\n' >> iso_root/boot/grub/grub.cfg
-        printf 'menuentry "DizzyoOS 1.0.0 (Genesis)" {\n' >> iso_root/boot/grub/grub.cfg
-        printf '    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS\n' >> iso_root/boot/grub/grub.cfg
-        printf '    initrd /arch/boot/x86_64/initramfs-linux\n' >> iso_root/boot/grub/grub.cfg
-        printf '}\n' >> iso_root/boot/grub/grub.cfg
-        printf '\n' >> iso_root/boot/grub/grub.cfg
-        printf 'menuentry "DizzyoOS 1.0.0 Fallback" {\n' >> iso_root/boot/grub/grub.cfg
-        printf '    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS nomodeset\n' >> iso_root/boot/grub/grub.cfg
-        printf '    initrd /arch/boot/x86_64/initramfs-linux\n' >> iso_root/boot/grub/grub.cfg
-        printf '}\n' >> iso_root/boot/grub/grub.cfg
-        grub-mkstandalone --format=x86_64-efi --output=iso_root/EFI/BOOT/BOOTX64.EFI --modules="linux normal iso9660 part_gpt" --locales="" --fonts="" "boot/grub/grub.cfg=iso_root/boot/grub/grub.cfg"
-        grub-mkstandalone --format=i386-pc --output=iso_root/boot/grub/bios.img --modules="linux normal iso9660 biosdisk search" --locales="" --fonts="" "boot/grub/grub.cfg=iso_root/boot/grub/grub.cfg"
-        cat /usr/lib/grub/i386-pc/cdboot.img iso_root/boot/grub/bios.img > iso_root/boot/grub/bios-combined.img
-        xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DIZZYO_OS" -output output/dizzyo-os-1.0.0-x86_64.iso -eltorito-boot boot/grub/bios-combined.img -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -isohybrid-gpt-basdat iso_root/
-        echo "BUILD COMPLETE!"
-        ls -lh output/
+        cd "$GITHUB_WORKSPACE"
+        echo "Working dir: $(pwd)"
+        echo "Files:"
+        ls -la
+        
+        ROOTFS=/tmp/rootfs
+        OUTPUT=$GITHUB_WORKSPACE/output
+        KERNEL=$(ls /boot/vmlinuz-* | head -1)
+        INITRD_SRC=$(ls /boot/initrd.img-* | head -1)
+        
+        echo "Using kernel: $KERNEL"
+        echo "Using initrd: $INITRD_SRC"
+        
+        mkdir -p $OUTPUT
+        rm -rf $ROOTFS
+        
+        # Create rootfs
+        echo "=== Creating rootfs ==="
+        mkdir -p $ROOTFS/{bin,sbin,lib,lib64,etc,var,proc,sys,dev,tmp,run,root,boot,opt,mnt,srv,home}
+        mkdir -p $ROOTFS/usr/{bin,sbin,lib,lib64,share}
+        mkdir -p $ROOTFS/dev/{pts,shm}
+        echo 'NAME="DizzyoOS"' | sudo tee $ROOTFS/etc/os-release
+        echo 'VERSION="1.0.0"' | sudo tee -a $ROOTFS/etc/os-release
+        echo 'ID=dizzyo' | sudo tee -a $ROOTFS/etc/os-release
+        echo 'ID_LIKE=arch' | sudo tee -a $ROOTFS/etc/os-release
+        echo 'PRETTY_NAME="DizzyoOS 1.0.0 (Genesis)"' | sudo tee -a $ROOTFS/etc/os-release
+        echo 'HOME_URL="https://dizzyo-os.org"' | sudo tee -a $ROOTFS/etc/os-release
+        echo "dizzyo-live" | sudo tee $ROOTFS/etc/hostname
+        echo "127.0.0.1 localhost" | sudo tee $ROOTFS/etc/hosts
+        echo "::1 localhost" | sudo tee -a $ROOTFS/etc/hosts
+        echo "127.0.1.1 dizzyo-live dizzyo-live.localdomain" | sudo tee -a $ROOTFS/etc/hosts
+        sudo chmod 1777 $ROOTFS/tmp
+        echo "Rootfs done"
+        
+        # Create squashfs
+        echo "=== Creating squashfs ==="
+        sudo mksquashfs $ROOTFS /tmp/rootfs.squashfs -comp zstd -Xcompression-level 19 -noappend
+        echo "Squashfs size: $(ls -lh /tmp/rootfs.squashfs | awk '{print $5}')"
+        
+        # Build ISO
+        echo "=== Building ISO ==="
+        ISO_DIR=/tmp/iso
+        rm -rf $ISO_DIR
+        mkdir -p $ISO_DIR/{arch/{boot/x86_64,x86_64},boot/grub,EFI/BOOT,isolinux}
+        
+        sudo cp /tmp/rootfs.squashfs $ISO_DIR/arch/x86_64/rootfs.squashfs
+        sudo cp $KERNEL $ISO_DIR/arch/boot/x86_64/vmlinuz-linux
+        sudo cp $INITRD_SRC $ISO_DIR/arch/boot/x86_64/initramfs-linux
+        
+        echo "ISO contents:"
+        find $ISO_DIR -type f | head -20
+        
+        # GRUB config
+        cat > $ISO_DIR/boot/grub/grub.cfg << 'EOF'
+set default=0
+set timeout=5
+set gfxmode=auto
+menuentry "DizzyoOS 1.0.0 (Genesis)" {
+    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS
+    initrd /arch/boot/x86_64/initramfs-linux
+}
+menuentry "DizzyoOS 1.0.0 Fallback" {
+    linux /arch/boot/x86_64/vmlinuz-linux archisolabel=DIZZYO_OS nomodeset
+    initrd /arch/boot/x86_64/initramfs-linux
+}
+EOF
+        
+        # GRUB EFI
+        sudo grub-mkstandalone --format=x86_64-efi --output=$ISO_DIR/EFI/BOOT/BOOTX64.EFI --modules="linux normal iso9660 part_gpt" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
+        
+        # GRUB BIOS
+        sudo grub-mkstandalone --format=i386-pc --output=$ISO_DIR/boot/grub/bios.img --modules="linux normal iso9660 biosdisk search" --locales="" --fonts="" "boot/grub/grub.cfg=$ISO_DIR/boot/grub/grub.cfg"
+        
+        sudo cat /usr/lib/grub/i386-pc/cdboot.img $ISO_DIR/boot/grub/bios.img | sudo tee $ISO_DIR/boot/grub/bios-combined.img > /dev/null
+        
+        # Create ISO
+        sudo xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DIZZYO_OS" -output $OUTPUT/dizzyo-os-1.0.0-x86_64.iso -eltorito-boot boot/grub/bios-combined.img -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -isohybrid-gpt-basdat $ISO_DIR/
+        
+        echo "=== BUILD COMPLETE ==="
+        ls -lh $OUTPUT/
 
     - name: Upload ISO
       uses: actions/upload-artifact@v4
-      if: always()
+      if: success()
       with:
         name: dizzyo-os-iso
         path: output/*.iso
