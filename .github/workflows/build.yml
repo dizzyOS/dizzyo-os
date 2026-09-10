@@ -16,7 +16,11 @@ jobs:
     - name: Setup Arch environment
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm archiso base-devel
+        pacman -S --noconfirm archiso base-devel syslinux
+        echo "=== Syslinux files ==="
+        find /usr/lib/syslinux -name "*.c32" 2>/dev/null | head -20
+        find /usr/lib/ISOLINUX -type f 2>/dev/null | head -10
+        ls -la /usr/lib/syslinux/bios/ 2>/dev/null | head -20
 
     - name: Checkout
       uses: actions/checkout@v4
@@ -141,8 +145,10 @@ jobs:
         sudo bash -c "printf 'UI vesamenu.c32\nPROMPT 0\nTIMEOUT 50\nDEFAULT dizzyo\n\nLABEL dizzyo\n    MENU LABEL DizzyoOS 1.0.0 (Genesis)\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS\n\nLABEL dizzyo-fallback\n    MENU LABEL DizzyoOS 1.0.0 Fallback (nomodeset)\n    LINUX /arch/boot/x86_64/vmlinuz-linux\n    INITRD /arch/boot/x86_64/initramfs-linux\n    APPEND archisolabel=DIZZYO_OS nomodeset\n' > $ISO_DIR/isolinux/isolinux.cfg"
 
         cp /usr/lib/ISOLINUX/isolinux.bin $ISO_DIR/isolinux/
-        cp /usr/lib/syslinux/modules/bios/vesamenu.c32 $ISO_DIR/isolinux/ 2>/dev/null || true
-        cp /usr/lib/syslinux/modules/bios/ldlinux.c32 $ISO_DIR/isolinux/ 2>/dev/null || true
+        cp /usr/lib/syslinux/modules/bios/vesamenu.c32 $ISO_DIR/isolinux/ || cp /usr/lib/syslinux/bios/vesamenu.c32 $ISO_DIR/isolinux/ || true
+        cp /usr/lib/syslinux/modules/bios/ldlinux.c32 $ISO_DIR/isolinux/ || cp /usr/lib/syslinux/bios/ldlinux.c32 $ISO_DIR/isolinux/ || true
+        echo "=== Isolinux dir ==="
+        ls -la $ISO_DIR/isolinux/
 
         xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DIZZYO_OS" -output /tmp/dizzyo-os-1.0.0-x86_64.iso -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-boot isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -isohybrid-gpt-basdat $ISO_DIR/
 
