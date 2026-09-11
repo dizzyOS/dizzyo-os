@@ -16,7 +16,9 @@ jobs:
     - name: Setup Arch environment
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm archiso base-devel grub efibootmgr dosfstools mtools xorriso syslinux isolinux
+        pacman -S --noconfirm archiso base-devel grub efibootmgr dosfstools mtools xorriso syslinux
+        echo "=== Syslinux files ==="
+        find / -name "isolinux.bin" -o -name "isohdpfx.bin" -o -name "vesamenu.c32" -o -name "ldlinux.c32" -o -name "libcom32.c32" -o -name "libutil.c32" 2>/dev/null
 
     - name: Checkout
       uses: actions/checkout@v4
