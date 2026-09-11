@@ -1,0 +1,59 @@
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+echo ""
+echo "==========================================="
+echo "    DizzyoOS 1.0.0 (Genesis)"
+echo "==========================================="
+echo ""
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+
+echo "Loading kernel modules..."
+for mod in isofs cdrom sr_mod sd_mod ext4 vfat fat; do
+  modprobe $mod 2>/dev/null
+done
+echo "Modules loaded."
+
+echo "Searching for DizzyoOS media..."
+FOUND=0
+for dev in /dev/sr0 /dev/sr1 /dev/sda /dev/sdb /dev/vda /dev/nvme0n1; do
+  if [ -b "$dev" ] 2>/dev/null; then
+    echo "Trying $dev..."
+    mkdir -p /mnt/live
+    mount -t iso9660 -o ro "$dev" /mnt/live 2>/dev/null && {
+      echo "Found ISO on $dev"
+      if [ -f /mnt/live/arch/x86_64/rootfs.squashfs ]; then
+        echo "Found rootfs.squashfs, booting..."
+        mkdir -p /mnt/newroot
+        mount -t squashfs -o ro,loop /mnt/live/arch/x86_64/rootfs.squashfs /mnt/newroot
+        FOUND=1
+        break
+      fi
+      umount /mnt/live
+    }
+  fi
+done
+
+if [ "$FOUND" = "0" ]; then
+  echo "No media found, dropping to shell."
+  exec /bin/sh
+fi
+
+echo "Setting up live environment..."
+mkdir -p /mnt/newroot/{proc,sys,dev,tmp,run,root,opt,mnt,srv,home}
+mkdir -p /mnt/newroot/dev/pts
+mkdir -p /mnt/newroot/mnt/live
+mount --move /mnt/live /mnt/newroot/mnt/live 2>/dev/null || true
+for d in proc sys dev tmp run; do
+  mount --move /$d /mnt/newroot/$d 2>/dev/null || true
+done
+
+echo "Switching root..."
+exec switch_root /mnt/newroot /sbin/init
