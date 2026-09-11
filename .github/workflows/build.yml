@@ -55,7 +55,11 @@ jobs:
         printf '[Logind]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\n' > $ROOTFS/etc/systemd/logind.conf.d/no-lid.conf
 
         mkdir -p $ROOTFS/etc/sddm.conf.d
-        printf '[General]\nHaltCommand=/usr/bin/systemctl poweroff\nRebootCommand=/usr/bin/systemctl reboot\n' > $ROOTFS/etc/sddm.conf.d/dizzyo.conf
+        sudo bash -c "printf '[General]\nDisplayServer=wayland\nHaltCommand=/usr/bin/systemctl poweroff\nRebootCommand=/usr/bin/systemctl reboot\n\n[Autologin]\nUser=dizzyo\nSession=plasma.desktop\n' > $ROOTFS/etc/sddm.conf.d/dizzyo.conf"
+
+        mkdir -p $ROOTFS/etc/skel
+        useradd -R $ROOTFS -m -s /bin/bash dizzyo 2>/dev/null || true
+        echo "dizzyo:dizzyo" | chpasswd -R $ROOTFS 2>/dev/null || true
 
         mkdir -p $ROOTFS/etc/NetworkManager/conf.d
         printf '[main]\ndns=default\n' > $ROOTFS/etc/NetworkManager/conf.d/dns.conf
@@ -78,6 +82,14 @@ jobs:
 
         mkdir -p $ROOTFS/etc/skel/.config/autostart
         sudo cp $GITHUB_WORKSPACE/dizzyo-os/installer/autostart/dizzyo-install.desktop $ROOTFS/etc/skel/.config/autostart/dizzyo-install.desktop
+
+        mkdir -p $ROOTFS/home/dizzyo/Desktop
+        sudo cp $GITHUB_WORKSPACE/dizzyo-os/installer/autostart/dizzyo-install.desktop $ROOTFS/home/dizzyo/Desktop/dizzyo-install.desktop
+        chmod +x $ROOTFS/home/dizzyo/Desktop/dizzyo-install.desktop
+
+        mkdir -p $ROOTFS/home/dizzyo/.config/autostart
+        sudo cp $GITHUB_WORKSPACE/dizzyo-os/installer/autostart/dizzyo-install.desktop $ROOTFS/home/dizzyo/.config/autostart/dizzyo-install.desktop
+        chown -R 1000:1000 $ROOTFS/home/dizzyo/
 
         echo "Installer installed"
 
