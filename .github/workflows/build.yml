@@ -16,7 +16,7 @@ jobs:
     - name: Setup Arch environment
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm archiso base-devel
+        pacman -S --noconfirm archiso base-devel grub efibootmgr dosfstools mtools xorriso syslinux
 
     - name: Checkout
       uses: actions/checkout@v4
